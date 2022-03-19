@@ -1,2 +1,1 @@
-# impl-vol
-Implied volatility
+# Implied volatility
