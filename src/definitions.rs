@@ -37,6 +37,11 @@ pub fn exp(x: f64) -> f64 {
 }
 
 #[inline(always)]
+pub fn log(x: f64) -> f64 {
+  x.ln()
+}
+
+#[inline(always)]
 pub fn sqrt(x: f64) -> f64 {
   x.sqrt()
 }
