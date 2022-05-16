@@ -8,4 +8,13 @@ repository = "https://github.com/DariuszDepta/impl-vol.git"
 license = "MIT"
 edition = "2018"
 
+[features]
+default = [
+  "ENABLE_SWITCHING_THE_OUTPUT_TO_ITERATION_COUNT",
+  "ENABLE_CHANGING_THE_HOUSEHOLDER_METHOD_ORDER"
+]
+
+ENABLE_SWITCHING_THE_OUTPUT_TO_ITERATION_COUNT = []
+ENABLE_CHANGING_THE_HOUSEHOLDER_METHOD_ORDER = []
+
 [dependencies]
