@@ -1,8 +1,9 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
+pub fn iv_implied_volatility_from_a_transformed_rational_guess(
+  _price: f64,
+  _forward: f64,
+  _strike: f64,
+  _time: f64,
+  _quote: f64,
+) -> f64 {
+  0.0
 }
