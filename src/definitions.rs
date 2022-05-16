@@ -37,6 +37,11 @@ pub fn exp(x: f64) -> f64 {
 }
 
 #[inline(always)]
+pub fn pow(x: f64, n: f64) -> f64 {
+  x.powf(n)
+}
+
+#[inline(always)]
 pub fn log(x: f64) -> f64 {
   x.ln()
 }

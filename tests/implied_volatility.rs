@@ -1,7 +1,7 @@
 use impl_vol::*;
 
-fn eq(_expected: f64, _actual: f64) {
-  //assert!((expected - actual).abs() < f64::EPSILON, "expected: {}\n  actual: {},", expected, actual);
+fn eq(expected: f64, actual: f64) {
+  assert!((expected - actual).abs() < f64::EPSILON, "expected: {}\n  actual: {},", expected, actual);
 }
 
 #[test]

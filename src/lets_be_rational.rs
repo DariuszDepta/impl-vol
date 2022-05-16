@@ -1,9 +1,15 @@
 use crate::definitions::*;
 use crate::erf_cody::*;
 use crate::normal_distribution::*;
+use crate::rational_cubic::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-//static TWO_PI: f64 = 6.283185307179586476925286766559005768394338798750; //
+const TWO_PI: f64 = 6.283185307179586476925286766559005768394338798750;
+const SQRT_THREE: f64 = 1.732050807568877293527446341505872366942805253810;
+const SQRT_PI_OVER_TWO: f64 = 1.253314137315500251207882642405522626503493370305; // sqrt(pi/2) to avoid misinterpretation.
+const SQRT_ONE_OVER_THREE: f64 = 0.577350269189625764509148780501957455647601751270;
+const TWO_PI_OVER_SQRT_TWENTY_SEVEN: f64 = 1.209199576156145233729385505094770488189377498728; // 2*pi/sqrt(27)
+const PI_OVER_SIX: f64 = std::f64::consts::FRAC_PI_6;
 
 /// Set this to 0 if you want positive results for (positive) denormalised inputs, else to DBL_MIN.
 /// Note that you cannot achieve full machine accuracy from denormalised inputs!
@@ -39,6 +45,28 @@ fn implied_volatility_output(count: usize, volatility: f64) -> f64 {
 const DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS: bool = true;
 #[cfg(not(feature = "DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS"))]
 const DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS: bool = false;
+
+#[cfg(feature = "ENABLE_CHANGING_THE_HOUSEHOLDER_METHOD_ORDER")]
+static IMPLIED_VOLATILITY_HOUSEHOLDER_METHOD_ORDER: AtomicUsize = AtomicUsize::new(4);
+
+#[cfg(feature = "ENABLE_CHANGING_THE_HOUSEHOLDER_METHOD_ORDER")]
+fn get_implied_volatility_householder_method_order() -> usize {
+  IMPLIED_VOLATILITY_HOUSEHOLDER_METHOD_ORDER.load(Ordering::Relaxed)
+}
+
+#[cfg(feature = "ENABLE_CHANGING_THE_HOUSEHOLDER_METHOD_ORDER")]
+fn householder_factor(newton: f64, halley: f64, hh3: f64) -> f64 {
+  sel(
+    get_implied_volatility_householder_method_order() > 3,
+    (1.0 + 0.5 * halley * newton) / (1.0 + newton * (halley + hh3 * newton / 6.0)),
+    sel(get_implied_volatility_householder_method_order() > 2, 1.0 / (1.0 + 0.5 * halley * newton), 1.0),
+  )
+}
+
+#[cfg(not(feature = "ENABLE_CHANGING_THE_HOUSEHOLDER_METHOD_ORDER"))]
+fn householder_factor(newton: f64, halley: f64, hh3: f64) -> f64 {
+  (1 + 0.5 * halley * newton) / (1 + newton * (halley + hh3 * newton / 6))
+}
 
 ///```text
 /// Asymptotic expansion of
@@ -256,6 +284,7 @@ fn normalised_black_call(x: f64, s: f64) -> f64 {
   }
 }
 
+///
 fn normalised_vega(x: f64, s: f64) -> f64 {
   let ax = fabs(x);
   if ax <= 0.0 {
@@ -265,6 +294,65 @@ fn normalised_vega(x: f64, s: f64) -> f64 {
   } else {
     ONE_OVER_SQRT_TWO_PI * exp(-0.5 * (square(x / s) + square(0.5 * s)))
   }
+}
+
+/// This weeds out denormalised (a.k.a. 'subnormal') numbers.
+fn is_below_horizon(x: f64) -> bool {
+  fabs(x) < DENORMALISATION_CUTOFF
+}
+
+///
+fn compute_f_lower_map_and_first_two_derivatives(x: f64, s: f64) -> (f64, f64, f64) {
+  let ax = fabs(x);
+  let z = SQRT_ONE_OVER_THREE * ax / s;
+  let y = z * z;
+  let s2 = s * s;
+  let phi_minus = norm_cdf(-z);
+  let phi_plus = norm_pdf(z);
+  let fpp = PI_OVER_SIX * y / (s2 * s) * phi_minus * (8.0 * SQRT_THREE * s * ax + (3.0 * s2 * (s2 - 8.0) - 8.0 * x * x) * phi_minus / phi_plus) * exp(2.0 * y + 0.25 * s2);
+  let (f, fp) = if is_below_horizon(s) {
+    (0.0, 1.0)
+  } else {
+    let phi2 = phi_minus * phi_minus;
+    let fp = TWO_PI * y * phi2 * exp(y + 0.125 * s * s);
+    let f = if is_below_horizon(x) {
+      0.0
+    } else {
+      TWO_PI_OVER_SQRT_TWENTY_SEVEN * ax * (phi2 * phi_minus)
+    };
+    (f, fp)
+  };
+  (f, fp, fpp)
+}
+
+///
+fn compute_f_upper_map_and_first_two_derivatives(x: f64, s: f64) -> (f64, f64, f64) {
+  let f = norm_cdf(-0.5 * s);
+  let (fp, fpp) = if is_below_horizon(x) {
+    let fp = -0.5;
+    let fpp = 0.0;
+    (fp, fpp)
+  } else {
+    let w = square(x / s);
+    let fp = -0.5 * exp(0.5 * w);
+    let fpp = SQRT_PI_OVER_TWO * exp(w + 0.125 * s * s) * w / s;
+    (fp, fpp)
+  };
+  (f, fp, fpp)
+}
+
+///
+fn inverse_f_lower_map(x: f64, f: f64) -> f64 {
+  sel(
+    is_below_horizon(f),
+    0.0,
+    fabs(x / (SQRT_THREE * inverse_norm_cdf(pow(f / (TWO_PI_OVER_SQRT_TWENTY_SEVEN * fabs(x)), 1.0 / 3.0)))),
+  )
+}
+
+///
+fn inverse_f_upper_map(f: f64) -> f64 {
+  -2.0 * inverse_norm_cdf(f)
 }
 
 ///```text
@@ -289,7 +377,6 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
   // Map puts to calls
   if q < 0.0 {
     x = -x;
-    q = -q;
   }
   // For negative or zero prices we return 0.
   if beta <= 0.0 {
@@ -303,15 +390,15 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
   if beta >= b_max {
     return implied_volatility_output(0, VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_ABOVE_MAXIMUM);
   }
-  let iterations = 0_usize;
-  let direction_reversal_count = 0_usize;
+  let mut iterations = 0_usize;
+  let mut direction_reversal_count = 0_usize;
 
-  let f = -DBL_MAX.clone();
-  let s = -DBL_MAX.clone();
-  let ds = s;
-  let ds_previous = 0_f64;
-  let s_left = DBL_MIN.clone();
-  let s_right = DBL_MAX.clone();
+  let mut f = -DBL_MAX.clone();
+  let mut s = -DBL_MAX.clone();
+  let mut ds = s;
+  let mut ds_previous = 0_f64;
+  let mut s_left = DBL_MIN.clone();
+  let mut s_right = DBL_MAX.clone();
   // The temptation is great to use the optimised form b_c = exp(x/2)/2-exp(-x/2)·Phi(sqrt(-2·x)) but that would require implementing all of the above types of round-off and over/underflow handling for this expression, too.
   let s_c = sqrt(fabs(2.0 * x));
   let b_c = normalised_black_call(x, s_c);
@@ -320,12 +407,211 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
     let s_l = s_c - b_c / v_c;
     let b_l = normalised_black_call(x, s_l);
     if beta < b_l {
-      // let f_lower_map_l: f64;
-      // let d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2;
+      let (f_lower_map_l, d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2) = compute_f_lower_map_and_first_two_derivatives(x, s_l);
+      let r_ll =
+        convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2, true);
+      f = rational_cubic_interpolation(beta, 0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, r_ll);
+      if !(f > 0.0) {
+        // This can happen due to roundoff truncation for extreme values such as |x|>500.
+        // We switch to quadratic interpolation using f(0)≡0, f(b_l), and f'(0)≡1 to specify the quadratic.
+        let t = beta / b_l;
+        f = (f_lower_map_l * t + b_l * (1.0 - t)) * t;
+      }
+      s = inverse_f_lower_map(x, f);
+      s_right = s_l;
+      //
+      // In this branch, which comprises the lowest segment, the objective function is
+      //     g(s) = 1/ln(b(x,s)) - 1/ln(beta)
+      //          ≡ 1/ln(b(s)) - 1/ln(beta)
+      // This makes
+      //              g'               =   -b'/(b·ln(b)²)
+      //              newton = -g/g'   =   (ln(beta)-ln(b))·ln(b)/ln(beta)·b/b'
+      //              halley = g''/g'  =   b''/b'  -  b'/b·(1+2/ln(b))
+      //              hh3    = g'''/g' =   b'''/b' +  2(b'/b)²·(1+3/ln(b)·(1+1/ln(b)))  -  3(b''/b)·(1+2/ln(b))
+      //
+      // The Householder(3) iteration is
+      //     s_n+1  =  s_n  +  newton · [ 1 + halley·newton/2 ] / [ 1 + newton·( halley + hh3·newton/6 ) ]
+      //
+      while iterations < n && fabs(ds) > DBL_EPSILON * s {
+        if ds * ds_previous < 0.0 {
+          direction_reversal_count += 1;
+        }
+        if iterations > 0 && (3 == direction_reversal_count || !(s > s_left && s < s_right)) {
+          // If looping inefficiently, or the forecast step takes us outside the bracket, or onto its edges, switch to binary nesting.
+          // NOTE that this can only really happen for very extreme values of |x|, such as |x| = |ln(F/K)| > 500.
+          s = 0.5 * (s_left + s_right);
+          if s_right - s_left <= DBL_EPSILON * s {
+            break;
+          };
+          direction_reversal_count = 0;
+          ds = 0.0;
+        }
+        ds_previous = ds;
+        let b = normalised_black_call(x, s);
+        let bp = normalised_vega(x, s);
+        if b > beta && s < s_right {
+          s_right = s;
+        } else if b < beta && s > s_left {
+          s_left = s;
+        } // Tighten the bracket if applicable.
+        if b <= 0.0 || bp <= 0.0 {
+          // Numerical underflow. Switch to binary nesting for this iteration.
+          ds = 0.5 * (s_left + s_right) - s;
+        } else {
+          let ln_b = log(b);
+          let ln_beta = log(beta);
+          let bpob = bp / b;
+          let h = x / s;
+          let b_halley = h * h / s - s / 4.0;
+          let newton = (ln_beta - ln_b) * ln_b / ln_beta / bpob;
+          let halley = b_halley - bpob * (1.0 + 2.0 / ln_b);
+          let b_hh3 = b_halley * b_halley - 3.0 * square(h / s) - 0.25;
+          let hh3 = b_hh3 + 2.0 * square(bpob) * (1.0 + 3.0 / ln_b * (1.0 + 1.0 / ln_b)) - 3.0 * b_halley * bpob * (1.0 + 2.0 / ln_b);
+          ds = newton * householder_factor(newton, halley, hh3);
+        }
+        ds = max(-0.5 * s, ds);
+        s += ds;
+        iterations += 1;
+      }
+      return implied_volatility_output(iterations, s);
+    } else {
+      let v_l = normalised_vega(x, s_l);
+      let r_lm = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, 0.0, false);
+      s = rational_cubic_interpolation(beta, b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, r_lm);
+      s_left = s_l;
+      s_right = s_c;
+    }
+  } else {
+    let s_h = sel(v_c > DBL_MIN, s_c + (b_max - b_c) / v_c, s_c);
+    let b_h = normalised_black_call(x, s_h);
+    if beta <= b_h {
+      let v_h = normalised_vega(x, s_h);
+      let r_hm = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_left_side(b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, 0.0, false);
+      s = rational_cubic_interpolation(beta, b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, r_hm);
+      s_left = s_c;
+      s_right = s_h;
+    } else {
+      let (f_upper_map_h, d_f_upper_map_h_d_beta, d2_f_upper_map_h_d_beta2) = compute_f_upper_map_and_first_two_derivatives(x, s_h);
+      if d2_f_upper_map_h_d_beta2 > -*SQRT_DBL_MAX && d2_f_upper_map_h_d_beta2 < *SQRT_DBL_MAX {
+        let r_hh = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_left_side(
+          b_h,
+          b_max,
+          f_upper_map_h,
+          0.,
+          d_f_upper_map_h_d_beta,
+          -0.5,
+          d2_f_upper_map_h_d_beta2,
+          true,
+        );
+        f = rational_cubic_interpolation(beta, b_h, b_max, f_upper_map_h, 0., d_f_upper_map_h_d_beta, -0.5, r_hh);
+      }
+      if f <= 0.0 {
+        let h = b_max - b_h;
+        let t = (beta - b_h) / h;
+        f = (f_upper_map_h * (1.0 - t) + 0.5 * h * t) * (1.0 - t); // We switch to quadratic interpolation using f(b_h), f(b_max)≡0, and f'(b_max)≡-1/2 to specify the quadratic.
+      }
+      s = inverse_f_upper_map(f);
+      s_left = s_h;
+      if beta > 0.5 * b_max {
+        // Else we better drop through and let the objective function be g(s) = b(x,s)-beta.
+        //
+        // In this branch, which comprises the upper segment, the objective function is
+        //     g(s) = ln(b_max-beta)-ln(b_max-b(x,s))
+        //          ≡ ln((b_max-beta)/(b_max-b(s)))
+        // This makes
+        //              g'               =   b'/(b_max-b)
+        //              newton = -g/g'   =   ln((b_max-b)/(b_max-beta))·(b_max-b)/b'
+        //              halley = g''/g'  =   b''/b'  +  b'/(b_max-b)
+        //              hh3    = g'''/g' =   b'''/b' +  g'·(2g'+3b''/b')
+        // and the iteration is
+        //     s_n+1  =  s_n  +  newton · [ 1 + halley·newton/2 ] / [ 1 + newton·( halley + hh3·newton/6 ) ].
+        //
+
+        while iterations < n && fabs(ds) > DBL_EPSILON * s {
+          if ds * ds_previous < 0.0 {
+            direction_reversal_count += 1;
+          }
+          if iterations > 0 && (3 == direction_reversal_count || !(s > s_left && s < s_right)) {
+            // If looping inefficiently, or the forecast step takes us outside the bracket, or onto its edges, switch to binary nesting.
+            // NOTE that this can only really happen for very extreme values of |x|, such as |x| = |ln(F/K)| > 500.
+            s = 0.5 * (s_left + s_right);
+            if s_right - s_left <= DBL_EPSILON * s {
+              break;
+            };
+            direction_reversal_count = 0;
+            ds = 0.0;
+          }
+          ds_previous = ds;
+          let b = normalised_black_call(x, s);
+          let bp = normalised_vega(x, s);
+          if b > beta && s < s_right {
+            // Tighten the bracket if applicable.
+            s_right = s;
+          } else if b < beta && s > s_left {
+            s_left = s;
+          }
+          if b >= b_max || bp <= DBL_MIN {
+            // Numerical underflow. Switch to binary nesting for this iteration.
+            ds = 0.5 * (s_left + s_right) - s;
+          } else {
+            let b_max_minus_b = b_max - b;
+            let g = log((b_max - beta) / b_max_minus_b);
+            let gp = bp / b_max_minus_b;
+            let b_halley = square(x / s) / s - s / 4.0;
+            let b_hh3 = b_halley * b_halley - 3.0 * square(x / (s * s)) - 0.25;
+            let newton = -g / gp;
+            let halley = b_halley + gp;
+            let hh3 = b_hh3 + gp * (2.0 * gp + 3.0 * b_halley);
+            ds = newton * householder_factor(newton, halley, hh3);
+          }
+          ds = max(-0.5 * s, ds);
+          s += ds;
+          iterations += 1;
+        }
+        return implied_volatility_output(iterations, s);
+      }
     }
   }
-  ////
-  0.0
+  // In this branch, which comprises the two middle segments, the objective function is g(s) = b(x,s)-beta, or g(s) = b(s) - beta, for short.
+  // This makes
+  //              newton = -g/g'   =  -(b-beta)/b'
+  //              halley = g''/g'  =    b''/b'    =  x²/s³-s/4
+  //              hh3    = g'''/g' =    b'''/b'   =  halley² - 3·(x/s²)² - 1/4
+  // and the iteration is
+  //     s_n+1  =  s_n  +  newton · [ 1 + halley·newton/2 ] / [ 1 + newton·( halley + hh3·newton/6 ) ].
+  //
+  while iterations < n && fabs(ds) > DBL_EPSILON * s {
+    if ds * ds_previous < 0.0 {
+      direction_reversal_count += 1;
+    }
+    if iterations > 0 && (3 == direction_reversal_count || !(s > s_left && s < s_right)) {
+      // If looping inefficiently, or the forecast step takes us outside the bracket, or onto its edges, switch to binary nesting.
+      // NOTE that this can only really happen for very extreme values of |x|, such as |x| = |ln(F/K)| > 500.
+      s = 0.5 * (s_left + s_right);
+      if s_right - s_left <= DBL_EPSILON * s {
+        break;
+      };
+      direction_reversal_count = 0;
+      ds = 0.0;
+    }
+    ds_previous = ds;
+    let b = normalised_black_call(x, s);
+    let bp = normalised_vega(x, s);
+
+    if b > beta && s < s_right {
+      // Tighten the bracket if applicable.
+      s_right = s;
+    } else if b < beta && s > s_left {
+      s_left = s;
+    }
+    let newton = (beta - b) / bp;
+    let halley = square(x / s) / s - s / 4.0;
+    let hh3 = halley * halley - 3.0 * square(x / (s * s)) - 0.25;
+    ds = max(-0.5 * s, newton * householder_factor(newton, halley, hh3));
+    s += ds;
+    iterations += 1;
+  }
+  return implied_volatility_output(iterations, s);
 }
 
 ///
@@ -350,4 +636,19 @@ fn implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(
     q = -q;
   }
   unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(price / (f.sqrt() * k.sqrt()), x, q, n) / t.sqrt()
+}
+
+fn convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(
+  x_l: f64,
+  x_r: f64,
+  y_l: f64,
+  y_r: f64,
+  d_l: f64,
+  d_r: f64,
+  second_derivative_r: f64,
+  prefer_shape_preservation_over_smoothness: bool,
+) -> f64 {
+  let r = rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(x_l, x_r, y_l, y_r, d_l, d_r, second_derivative_r);
+  let r_min = minimum_rational_cubic_control_parameter(d_l, d_r, (y_r - y_l) / (x_r - x_l), prefer_shape_preservation_over_smoothness);
+  max(r, r_min)
 }
