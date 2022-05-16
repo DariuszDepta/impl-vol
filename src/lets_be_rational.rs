@@ -410,7 +410,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
       let (f_lower_map_l, d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2) = compute_f_lower_map_and_first_two_derivatives(x, s_l);
       let r_ll =
         convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2, true);
-      f = rational_cubic_interpolation(beta, 0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, r_ll);
+      f = crate::rational_cubic::rational_cubic_interpolation(beta, 0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, r_ll);
       if !(f > 0.0) {
         // This can happen due to roundoff truncation for extreme values such as |x|>500.
         // We switch to quadratic interpolation using f(0)≡0, f(b_l), and f'(0)≡1 to specify the quadratic.
@@ -477,7 +477,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
     } else {
       let v_l = normalised_vega(x, s_l);
       let r_lm = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, 0.0, false);
-      s = rational_cubic_interpolation(beta, b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, r_lm);
+      s = crate::rational_cubic::rational_cubic_interpolation(beta, b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, r_lm);
       s_left = s_l;
       s_right = s_c;
     }
@@ -487,7 +487,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
     if beta <= b_h {
       let v_h = normalised_vega(x, s_h);
       let r_hm = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_left_side(b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, 0.0, false);
-      s = rational_cubic_interpolation(beta, b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, r_hm);
+      s = crate::rational_cubic::rational_cubic_interpolation(beta, b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, r_hm);
       s_left = s_c;
       s_right = s_h;
     } else {
@@ -503,7 +503,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
           d2_f_upper_map_h_d_beta2,
           true,
         );
-        f = rational_cubic_interpolation(beta, b_h, b_max, f_upper_map_h, 0., d_f_upper_map_h_d_beta, -0.5, r_hh);
+        f = crate::rational_cubic::rational_cubic_interpolation(beta, b_h, b_max, f_upper_map_h, 0., d_f_upper_map_h_d_beta, -0.5, r_hh);
       }
       if f <= 0.0 {
         let h = b_max - b_h;
@@ -636,19 +636,4 @@ fn implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(
     q = -q;
   }
   unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(price / (f.sqrt() * k.sqrt()), x, q, n) / t.sqrt()
-}
-
-fn convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(
-  x_l: f64,
-  x_r: f64,
-  y_l: f64,
-  y_r: f64,
-  d_l: f64,
-  d_r: f64,
-  second_derivative_r: f64,
-  prefer_shape_preservation_over_smoothness: bool,
-) -> f64 {
-  let r = rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(x_l, x_r, y_l, y_r, d_l, d_r, second_derivative_r);
-  let r_min = minimum_rational_cubic_control_parameter(d_l, d_r, (y_r - y_l) / (x_r - x_l), prefer_shape_preservation_over_smoothness);
-  max(r, r_min)
 }
