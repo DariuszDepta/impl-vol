@@ -1,3 +1,4 @@
+use crate::erf_cody::*;
 use crate::normal_distribution::*;
 use crate::utils::*;
 use lazy_static::lazy_static;
@@ -54,6 +55,11 @@ fn implied_volatility_output(count: usize, volatility: f64) -> f64 {
   volatility
 }
 
+#[cfg(feature = "DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS")]
+const DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS: bool = true;
+#[cfg(not(feature = "DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS"))]
+const DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS: bool = false;
+
 ///```text
 /// Asymptotic expansion of
 ///
@@ -103,20 +109,18 @@ fn asymptotic_expansion_of_normalised_black_call(h: f64, t: f64) -> f64 {
 /// Theoretically accurate to (better than) precision  ε = 2.23E-16  when  h<=0  and  t < τ  with  τ := 2·ε^(1/16) ≈ 0.21.
 /// The main bottleneck for precision is the coefficient a:=1+h·Y(h) when |h|>1 .
 /// ```
+#[rustfmt::skip]
 fn small_t_expansion_of_normalised_black_call(h: f64, t: f64) -> f64 {
   // Y(h) := Φ(h)/φ(h) = √(π/2)·erfcx(-h/√2)
   // a := 1+h·Y(h)  --- Note that due to h<0, and h·Y(h) -> -1 (from above) as h -> -∞, we also have that a>0 and a -> 0 as h -> -∞
   // w := t² , h2 := h²
-  0.0
+  let a = 1.0 + h * (0.5 * SQRT_TWO_PI) * erfcx_cody(-ONE_OVER_SQRT_TWO * h);
+  let w = t * t;
+  let h2 = h * h;
+  let expansion = 2.0*t*(a+w*((-1.0+3.0*a+a*h2)/6.0+w*((-7.0+15.0*a+h2*(-1.0+10.0*a+a*h2))/120.0+w*((-57.0+105.0*a+h2*(-18.0+105.0*a+h2*(-1.0+21.0*a+a*h2)))/5040.0+w*((-561.0+945.0*a+h2*(-285.0+1260.0*a+h2*(-33.0+378.0*a+h2*(-1.0+36.0*a+a*h2))))/362880.0+w*((-6555.0+10395.0*a+h2*(-4680.0+17325.0*a+h2*(-840.0+6930.0*a+h2*(-52.0+990.0*a+h2*(-1.0+55.0*a+a*h2)))))/39916800.0+((-89055.0+135135.0*a+h2*(-82845.0+270270.0*a+h2*(-20370.0+135135.0*a+h2*(-1926.0+25740.0*a+h2*(-75.0+2145.0*a+h2*(-1.0+78.0*a+a*h2))))))*w)/6227020800.0))))));
+  let b = ONE_OVER_SQRT_TWO_PI * exp(-0.5 * (h * h + t * t)) * expansion;
+  fabs(max(b, 0.0))
 }
-/*
-
-   const double a = 1+h*(0.5*SQRT_TWO_PI)*erfcx_cody(-ONE_OVER_SQRT_TWO*h), w=t*t, h2=h*h;
-   const double expansion = 2*t*(a+w*((-1+3*a+a*h2)/6+w*((-7+15*a+h2*(-1+10*a+a*h2))/120+w*((-57+105*a+h2*(-18+105*a+h2*(-1+21*a+a*h2)))/5040+w*((-561+945*a+h2*(-285+1260*a+h2*(-33+378*a+h2*(-1+36*a+a*h2))))/362880+w*((-6555+10395*a+h2*(-4680+17325*a+h2*(-840+6930*a+h2*(-52+990*a+h2*(-1+55*a+a*h2)))))/39916800+((-89055+135135*a+h2*(-82845+270270*a+h2*(-20370+135135*a+h2*(-1926+25740*a+h2*(-75+2145*a+h2*(-1+78*a+a*h2))))))*w)/6227020800.0))))));
-   const double b = ONE_OVER_SQRT_TWO_PI*exp((-0.5*(h*h+t*t)))*expansion;
-   return fabs(std::max(b,0.0));
-}
- */
 
 ///
 fn normalised_intrinsic(x: f64, q: f64 /* q=±1 */) -> f64 {
@@ -141,6 +145,106 @@ fn normalised_intrinsic_call(x: f64) -> f64 {
   normalised_intrinsic(x, 1.0)
 }
 
+///```text
+///     b(x,s)  =  Φ(x/s+s/2)·exp(x/2)  -   Φ(x/s-s/2)·exp(-x/2)
+///             =  Φ(h+t)·exp(x/2)      -   Φ(h-t)·exp(-x/2)
+/// with
+///             h  =  x/s   and   t  =  s/2
+/// ```
+fn normalised_black_call_using_norm_cdf(x: f64, s: f64) -> f64 {
+  let h = x / s;
+  let t = 0.5 * s;
+  let b_max = exp(0.5 * x);
+  let b = norm_cdf(h + t) * b_max - norm_cdf(h - t) / b_max;
+  fabs(max(b, 0.0))
+}
+
+///```text
+/// Given h = x/s and t = s/2, the normalised Black function can be written as
+///
+///     b(x,s)  =  Φ(x/s+s/2)·exp(x/2)  -   Φ(x/s-s/2)·exp(-x/2)
+///             =  Φ(h+t)·exp(h·t)      -   Φ(h-t)·exp(-h·t) .                     (*)
+///
+/// It is mentioned in section 4 (and discussion of figures 2 and 3) of George Marsaglia's article "Evaluating the
+/// Normal Distribution" (available at http://www.jstatsoft.org/v11/a05/paper) that the error of any cumulative normal
+/// function Φ(z) is dominated by the hardware (or compiler implementation) accuracy of exp(-z²/2) which is not
+/// reliably more than 14 digits when z is large. The accuracy of Φ(z) typically starts coming down to 14 digits when
+/// z is around -8. For the (normalised) Black function, as above in (*), this means that we are subtracting two terms
+/// that are each products of terms with about 14 digits of accuracy. The net result, in each of the products, is even
+/// less accuracy, and then we are taking the difference of these terms, resulting in even less accuracy. When we are
+/// using the asymptotic expansion asymptotic_expansion_of_normalised_black_call() invoked in the second branch at the
+/// beginning of this function, we are using only *one* exponential instead of 4, and this improves accuracy. It
+/// actually improves it a bit more than you would expect from the above logic, namely, almost the full two missing
+/// digits (in 64 bit IEEE floating point).  Unfortunately, going higher order in the asymptotic expansion will not
+/// enable us to gain more accuracy (by extending the range in which we could use the expansion) since the asymptotic
+/// expansion, being a divergent series, can never gain 16 digits of accuracy for z=-8 or just below. The best you can
+/// get is about 15 digits (just), for about 35 terms in the series (26.2.12), which would result in an prohibitively
+/// long expression in function asymptotic expansion asymptotic_expansion_of_normalised_black_call(). In this last branch,
+/// here, we therefore take a different tack as follows.
+///     The "scaled complementary error function" is defined as erfcx(z) = exp(z²)·erfc(z). Cody's implementation of this
+/// function as published in "Rational Chebyshev approximations for the error function", W. J. Cody, Math. Comp., 1969, pp.
+/// 631-638, uses rational functions that theoretically approximates erfcx(x) to at least 18 significant decimal digits,
+/// *without* the use of the exponential function when x>4, which translates to about z<-5.66 in Φ(z). To make use of it,
+/// we write
+///             Φ(z) = exp(-z²/2)·erfcx(-z/√2)/2
+///
+/// to transform the normalised black function to
+///
+///   b   =  ½ · exp(-½(h²+t²)) · [ erfcx(-(h+t)/√2) -  erfcx(-(h-t)/√2) ]
+///
+/// which now involves only one exponential, instead of three, when |h|+|t| > 5.66 , and the difference inside the
+/// square bracket is between the evaluation of two rational functions, which, typically, according to Marsaglia,
+/// retains the full 16 digits of accuracy (or just a little less than that).
+///```
+fn normalised_black_call_using_erfcx(h: f64, t: f64) -> f64 {
+  let b = 0.5 * exp(-0.5 * (h * h + t * t)) * (erfcx_cody(-ONE_OVER_SQRT_TWO * (h + t)) - erfcx_cody(-ONE_OVER_SQRT_TWO * (h - t)));
+  fabs(max(b, 0.0))
+}
+
+///```text
+/// Introduced on 2017-02-18
+///
+///     b(x,s)  =  Φ(x/s+s/2)·exp(x/2)  -   Φ(x/s-s/2)·exp(-x/2)
+///             =  Φ(h+t)·exp(x/2)      -   Φ(h-t)·exp(-x/2)
+///             =  ½ · exp(-u²-v²) · [ erfcx(u-v) -  erfcx(u+v) ]
+///             =  ½ · [ exp(x/2)·erfc(u-v)     -  exp(-x/2)·erfc(u+v)    ]
+///             =  ½ · [ exp(x/2)·erfc(u-v)     -  exp(-u²-v²)·erfcx(u+v) ]
+///             =  ½ · [ exp(-u²-v²)·erfcx(u-v) -  exp(-x/2)·erfc(u+v)    ]
+/// with
+///              h  =  x/s ,       t  =  s/2 ,
+/// and
+///              u  = -h/√2  and   v  =  t/√2 .
+///
+/// Cody's erfc() and erfcx() functions each, for some values of their argument, involve the evaluation
+/// of the exponential function exp(). The normalised Black function requires additional evaluation(s)
+/// of the exponential function irrespective of which of the above formulations is used. However, the total
+/// number of exponential function evaluations can be minimised by a judicious choice of one of the above
+/// formulations depending on the input values and the branch logic in Cody's erfc() and erfcx().
+///```
+fn normalised_black_call_with_optimal_use_of_codys_functions(x: f64, s: f64) -> f64 {
+  let codys_threshold = 0.46875;
+  let h = x / s;
+  let t = 0.5 * s;
+  let q1 = -ONE_OVER_SQRT_TWO * (h + t);
+  let q2 = -ONE_OVER_SQRT_TWO * (h - t);
+  let two_b;
+  if q1 < codys_threshold {
+    if q2 < codys_threshold {
+      two_b = exp(0.5 * x) * erfc_cody(q1) - exp(-0.5 * x) * erfc_cody(q2);
+    } else {
+      two_b = exp(0.5 * x) * erfc_cody(q1) - exp(-0.5 * (h * h + t * t)) * erfcx_cody(q2);
+    }
+  } else {
+    if q2 < codys_threshold {
+      two_b = exp(-0.5 * (h * h + t * t)) * erfcx_cody(q1) - exp(-0.5 * x) * erfc_cody(q2);
+    } else {
+      two_b = exp(-0.5 * (h * h + t * t)) * (erfcx_cody(q1) - erfcx_cody(q2));
+    }
+  }
+  fabs(max(0.5 * two_b, 0.0))
+}
+
+///
 fn normalised_black_call(x: f64, s: f64) -> f64 {
   if x > 0.0 {
     return normalised_intrinsic_call(x) + normalised_black_call(-x, s); // In the money.
@@ -149,7 +253,8 @@ fn normalised_black_call(x: f64, s: f64) -> f64 {
     return normalised_intrinsic_call(x); // sigma=0 -> intrinsic value.
   }
   // Denote h := x/s and t := s/2.
-  // We evaluate the condition |h|>|η|, i.e., h<η  &&  t < τ+|h|-|η|  avoiding any divisions by s , where η = ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD  and τ = SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD.
+  // We evaluate the condition |h|>|η|, i.e., h<η  &&  t < τ+|h|-|η| avoiding any divisions by s,
+  // where η = ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD  and τ = SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD.
   let eta = ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD.clone();
   let tau = SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD.clone();
   if x < s * eta && 0.5 * s * s + x < s * (tau + eta) {
@@ -158,22 +263,28 @@ fn normalised_black_call(x: f64, s: f64) -> f64 {
   if 0.5 * s < tau {
     return small_t_expansion_of_normalised_black_call(x / s, 0.5 * s);
   }
-  /*
-
-
-
-  #ifdef DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS
-     // When b is more than, say, about 85% of b_max=exp(x/2), then b is dominated by the first of the two terms in the Black formula, and we retain more accuracy by not attempting to combine the two terms in any way.
-     // We evaluate the condition h+t>0.85  avoiding any divisions by s.
-     if ( x+0.5*s*s > s*0.85 )
-        return normalised_black_call_using_norm_cdf(x,s);
-     return normalised_black_call_using_erfcx(x/s,0.5*s);
-  #else
-     return normalised_black_call_with_optimal_use_of_codys_functions(x,s);
-  #endif
+  if DO_NOT_OPTIMISE_NORMALISED_BLACK_IN_REGIONS_3_AND_4_FOR_CODYS_FUNCTIONS {
+    // When b is more than, say, about 85% of b_max=exp(x/2), then b is dominated by the first of the two terms in the Black formula, and we retain more accuracy by not attempting to combine the two terms in any way.
+    // We evaluate the condition h+t>0.85  avoiding any divisions by s.
+    if x + 0.5 * s * s > s * 0.85 {
+      normalised_black_call_using_norm_cdf(x, s)
+    } else {
+      normalised_black_call_using_erfcx(x / s, 0.5 * s)
+    }
+  } else {
+    normalised_black_call_with_optimal_use_of_codys_functions(x, s)
   }
-  */
-  0.0
+}
+
+fn normalised_vega(x: f64, s: f64) -> f64 {
+  let ax = fabs(x);
+  if ax <= 0.0 {
+    ONE_OVER_SQRT_TWO_PI * exp(-0.125 * s * s)
+  } else if s <= 0.0 || s <= ax * SQRT_DBL_MIN.clone() {
+    0.0
+  } else {
+    ONE_OVER_SQRT_TWO_PI * exp(-0.5 * (square(x / s) + square(0.5 * s)))
+  }
 }
 
 ///```text
@@ -224,7 +335,15 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
   // The temptation is great to use the optimised form b_c = exp(x/2)/2-exp(-x/2)·Phi(sqrt(-2·x)) but that would require implementing all of the above types of round-off and over/underflow handling for this expression, too.
   let s_c = sqrt(fabs(2.0 * x));
   let b_c = normalised_black_call(x, s_c);
-  //let v_c = normalised_vega(x, s_c);
+  let v_c = normalised_vega(x, s_c);
+  if beta < b_c {
+    let s_l = s_c - b_c / v_c;
+    let b_l = normalised_black_call(x, s_l);
+    if beta < b_l {
+      // let f_lower_map_l: f64;
+      // let d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2;
+    }
+  }
   ////
   0.0
 }

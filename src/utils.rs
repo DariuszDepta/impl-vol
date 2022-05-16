@@ -18,6 +18,11 @@ pub fn sqrt(a: f64) -> f64 {
 }
 
 #[inline(always)]
+pub fn square(a: f64) -> f64 {
+  a * a
+}
+
+#[inline(always)]
 pub fn fabs(a: f64) -> f64 {
   a.abs()
 }
@@ -28,6 +33,15 @@ pub fn sel(c: bool, a: f64, b: f64) -> f64 {
     a
   } else {
     b
+  }
+}
+
+#[inline(always)]
+pub fn d_int(x: f64) -> f64 {
+  if x > 0.0 {
+    x.floor()
+  } else {
+    -((-x).floor())
   }
 }
 
@@ -67,5 +81,21 @@ mod tests {
   fn test_sel() {
     assert_eq!(1.0, sel(true, 1.0, 2.0));
     assert_eq!(2.0, sel(false, 1.0, 2.0));
+  }
+
+  #[test]
+  fn test_d_int() {
+    assert_eq!(2.0, d_int(2.0));
+    assert_eq!(2.0, d_int(2.1));
+    assert_eq!(2.0, d_int(2.4));
+    assert_eq!(2.0, d_int(2.5));
+    assert_eq!(2.0, d_int(2.8));
+    assert_eq!(2.0, d_int(2.9));
+    assert_eq!(-2.0, d_int(-2.0));
+    assert_eq!(-2.0, d_int(-2.1));
+    assert_eq!(-2.0, d_int(-2.4));
+    assert_eq!(-2.0, d_int(-2.5));
+    assert_eq!(-2.0, d_int(-2.8));
+    assert_eq!(-2.0, d_int(-2.9));
   }
 }
