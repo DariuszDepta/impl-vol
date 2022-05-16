@@ -18,7 +18,9 @@ lazy_static! {
 }
 
 pub const ONE_OVER_SQRT_TWO: f64 = std::f64::consts::FRAC_1_SQRT_2;
+#[allow(clippy::excessive_precision)]
 pub const ONE_OVER_SQRT_TWO_PI: f64 = 0.3989422804014326779399460599343818684758586311649;
+#[allow(clippy::excessive_precision)]
 pub const SQRT_TWO_PI: f64 = 2.506628274631000502415765284811045253006986740610;
 
 pub fn norm_cdf(z: f64) -> f64 {
@@ -51,6 +53,7 @@ pub fn norm_cdf(z: f64) -> f64 {
   0.5 * erfc_cody(-z * ONE_OVER_SQRT_TWO)
 }
 
+#[allow(clippy::excessive_precision)]
 pub fn inverse_norm_cdf(u: f64) -> f64 {
   //
   // ALGORITHM AS241  APPL. STATIST. (1988) VOL. 37, NO. 3
@@ -111,7 +114,7 @@ pub fn inverse_norm_cdf(u: f64) -> f64 {
   const F4: f64 = 7.86869131145613259100E-4;
   const F5: f64 = 1.84631831751005468180E-5;
   const F6: f64 = 1.42151175831644588870E-7;
-  const F7: f64 = 2.04426310338993978564E-15;
+  const F7: f64 = 2.044_263_103_389_939_785_64E-15;
 
   if u <= 0.0 {
     return log(u);
@@ -127,14 +130,14 @@ pub fn inverse_norm_cdf(u: f64) -> f64 {
   } else {
     let mut r = sel(q < 0.0, u, 1.0 - u);
     r = sqrt(-log(r));
-    let ret;
-    if r < SPLIT2 {
-      r = r - CONST2;
-      ret = (((((((C7 * r + C6) * r + C5) * r + C4) * r + C3) * r + C2) * r + C1) * r + C0) / (((((((D7 * r + D6) * r + D5) * r + D4) * r + D3) * r + D2) * r + D1) * r + 1.0);
+
+    let ret = if r < SPLIT2 {
+      r -= CONST2;
+      (((((((C7 * r + C6) * r + C5) * r + C4) * r + C3) * r + C2) * r + C1) * r + C0) / (((((((D7 * r + D6) * r + D5) * r + D4) * r + D3) * r + D2) * r + D1) * r + 1.0)
     } else {
-      r = r - SPLIT2;
-      ret = (((((((E7 * r + E6) * r + E5) * r + E4) * r + E3) * r + E2) * r + E1) * r + E0) / (((((((F7 * r + F6) * r + F5) * r + F4) * r + F3) * r + F2) * r + F1) * r + 1.0);
-    }
+      r -= SPLIT2;
+      (((((((E7 * r + E6) * r + E5) * r + E4) * r + E3) * r + E2) * r + E1) * r + E0) / (((((((F7 * r + F6) * r + F5) * r + F4) * r + F3) * r + F2) * r + F1) * r + 1.0)
+    };
     sel(q < 0.0, -ret, ret)
   }
 }

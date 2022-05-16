@@ -14,7 +14,7 @@ lazy_static! {
   pub static ref SQRT_DBL_MIN: f64 = DBL_MIN.sqrt();
   pub static ref SQRT_DBL_MAX: f64 = DBL_MAX.sqrt();
   pub static ref ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD: f64 = -10.0;
-  pub static ref SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD: f64 = 2.0 * SIXTEENTH_ROOT_DBL_EPSILON.clone();
+  pub static ref SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD: f64 = 2.0 * *SIXTEENTH_ROOT_DBL_EPSILON;
 }
 
 #[inline(always)]

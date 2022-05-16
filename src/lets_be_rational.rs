@@ -4,10 +4,15 @@ use crate::normal_distribution::*;
 use crate::rational_cubic::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[allow(clippy::excessive_precision)]
 const TWO_PI: f64 = 6.283185307179586476925286766559005768394338798750;
+#[allow(clippy::excessive_precision)]
 const SQRT_THREE: f64 = 1.732050807568877293527446341505872366942805253810;
+#[allow(clippy::excessive_precision)]
 const SQRT_PI_OVER_TWO: f64 = 1.253314137315500251207882642405522626503493370305; // sqrt(pi/2) to avoid misinterpretation.
+#[allow(clippy::excessive_precision)]
 const SQRT_ONE_OVER_THREE: f64 = 0.577350269189625764509148780501957455647601751270;
+#[allow(clippy::excessive_precision)]
 const TWO_PI_OVER_SQRT_TWENTY_SEVEN: f64 = 1.209199576156145233729385505094770488189377498728; // 2*pi/sqrt(27)
 const PI_OVER_SIX: f64 = std::f64::consts::FRAC_PI_6;
 
@@ -137,7 +142,7 @@ fn normalised_intrinsic(x: f64, q: f64 /* q=±1 */) -> f64 {
   }
   let x2 = x * x;
   // The factor 98 is computed from last coefficient: √√92897280 = 98.1749
-  if x2 < 98.0 * FOURTH_ROOT_DBL_EPSILON.clone() {
+  if x2 < 98.0 * *FOURTH_ROOT_DBL_EPSILON {
     return fabs(max(
       sel(q < 0.0, -1.0, 1.0) * x * (1.0 + x2 * ((1.0 / 24.0) + x2 * ((1.0 / 1920.0) + x2 * ((1.0 / 322560.0) + (1.0 / 92897280.0) * x2)))),
       0.0,
@@ -242,18 +247,26 @@ fn normalised_black_call_with_optimal_use_of_codys_functions(x: f64, s: f64) -> 
     } else {
       two_b = exp(0.5 * x) * erfc_cody(q1) - exp(-0.5 * (h * h + t * t)) * erfcx_cody(q2);
     }
+  } else if q2 < codys_threshold {
+    two_b = exp(-0.5 * (h * h + t * t)) * erfcx_cody(q1) - exp(-0.5 * x) * erfc_cody(q2);
   } else {
-    if q2 < codys_threshold {
-      two_b = exp(-0.5 * (h * h + t * t)) * erfcx_cody(q1) - exp(-0.5 * x) * erfc_cody(q2);
-    } else {
-      two_b = exp(-0.5 * (h * h + t * t)) * (erfcx_cody(q1) - erfcx_cody(q2));
-    }
+    two_b = exp(-0.5 * (h * h + t * t)) * (erfcx_cody(q1) - erfcx_cody(q2));
   }
   fabs(max(0.5 * two_b, 0.0))
 }
 
 ///
-fn normalised_black_call(x: f64, s: f64) -> f64 {
+pub fn black(f: f64, k: f64, sigma: f64, t: f64, q: f64 /* q=±1 */) -> f64 {
+  let intrinsic = fabs(max(sel(q < 0.0, k - f, f - k), 0.0));
+  // Map in-the-money to out-of-the-money
+  if q * (f - k) > 0.0 {
+    return intrinsic + black(f, k, sigma, t, -q);
+  }
+  max(intrinsic, (sqrt(f) * sqrt(k)) * normalised_black(log(f / k), sigma * sqrt(t), q))
+}
+
+///
+pub fn normalised_black_call(x: f64, s: f64) -> f64 {
   if x > 0.0 {
     return normalised_intrinsic_call(x) + normalised_black_call(-x, s); // In the money.
   }
@@ -263,8 +276,8 @@ fn normalised_black_call(x: f64, s: f64) -> f64 {
   // Denote h := x/s and t := s/2.
   // We evaluate the condition |h|>|η|, i.e., h<η  &&  t < τ+|h|-|η| avoiding any divisions by s,
   // where η = ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD  and τ = SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD.
-  let eta = ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD.clone();
-  let tau = SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD.clone();
+  let eta = *ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD;
+  let tau = *SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD;
   if x < s * eta && 0.5 * s * s + x < s * (tau + eta) {
     return asymptotic_expansion_of_normalised_black_call(x / s, 0.5 * s);
   }
@@ -285,11 +298,17 @@ fn normalised_black_call(x: f64, s: f64) -> f64 {
 }
 
 ///
-fn normalised_vega(x: f64, s: f64) -> f64 {
+pub fn normalised_black(x: f64, s: f64, q: f64 /* q=±1 */) -> f64 {
+  /* Reciprocal-strike call-put equivalence */
+  normalised_black_call(sel(q < 0.0, -x, x), s)
+}
+
+///
+pub fn normalised_vega(x: f64, s: f64) -> f64 {
   let ax = fabs(x);
   if ax <= 0.0 {
     ONE_OVER_SQRT_TWO_PI * exp(-0.125 * s * s)
-  } else if s <= 0.0 || s <= ax * SQRT_DBL_MIN.clone() {
+  } else if s <= 0.0 || s <= ax * *SQRT_DBL_MIN {
     0.0
   } else {
     ONE_OVER_SQRT_TWO_PI * exp(-0.5 * (square(x / s) + square(0.5 * s)))
@@ -393,12 +412,12 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
   let mut iterations = 0_usize;
   let mut direction_reversal_count = 0_usize;
 
-  let mut f = -DBL_MAX.clone();
-  let mut s = -DBL_MAX.clone();
+  let mut f = -DBL_MAX;
+  let mut s = -DBL_MAX;
   let mut ds = s;
   let mut ds_previous = 0_f64;
-  let mut s_left = DBL_MIN.clone();
-  let mut s_right = DBL_MAX.clone();
+  let mut s_left = DBL_MIN;
+  let mut s_right = DBL_MAX;
   // The temptation is great to use the optimised form b_c = exp(x/2)/2-exp(-x/2)·Phi(sqrt(-2·x)) but that would require implementing all of the above types of round-off and over/underflow handling for this expression, too.
   let s_c = sqrt(fabs(2.0 * x));
   let b_c = normalised_black_call(x, s_c);
@@ -411,7 +430,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
       let r_ll =
         convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2, true);
       f = crate::rational_cubic::rational_cubic_interpolation(beta, 0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, r_ll);
-      if !(f > 0.0) {
+      if f.le(&0.0) {
         // This can happen due to roundoff truncation for extreme values such as |x|>500.
         // We switch to quadratic interpolation using f(0)≡0, f(b_l), and f'(0)≡1 to specify the quadratic.
         let t = beta / b_l;
@@ -611,16 +630,16 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
     s += ds;
     iterations += 1;
   }
-  return implied_volatility_output(iterations, s);
+  implied_volatility_output(iterations, s)
 }
 
 ///
-pub fn iv_implied_volatility_from_a_transformed_rational_guess(price: f64, f: f64, k: f64, t: f64, q: f64 /* q=±1 */) -> f64 {
+pub fn implied_volatility_from_a_transformed_rational_guess(price: f64, f: f64, k: f64, t: f64, q: f64 /* q=±1 */) -> f64 {
   implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(price, f, k, t, q, get_implied_volatility_maximum_iterations())
 }
 
 ///
-fn implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(mut price: f64, f: f64, k: f64, t: f64, mut q: f64 /* q=±1 */, n: usize) -> f64 {
+pub fn implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(mut price: f64, f: f64, k: f64, t: f64, mut q: f64 /* q=±1 */, n: usize) -> f64 {
   let intrinsic = fabs(max(sel(q < 0.0, k - f, f - k), 0.0));
   if price < intrinsic {
     return implied_volatility_output(0, VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_BELOW_INTRINSIC);
@@ -636,4 +655,20 @@ fn implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(
     q = -q;
   }
   unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(price / (f.sqrt() * k.sqrt()), x, q, n) / t.sqrt()
+}
+
+pub fn normalised_implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(mut beta: f64, x: f64, mut q: f64 /* q=±1 */, n: usize) -> f64 {
+  // Map in-the-money to out-of-the-money
+  if q * x > 0.0 {
+    beta -= normalised_intrinsic(x, q);
+    q = -q;
+  }
+  if beta < 0.0 {
+    return implied_volatility_output(0, VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_BELOW_INTRINSIC);
+  }
+  unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(beta, x, q, n)
+}
+
+pub fn normalised_implied_volatility_from_a_transformed_rational_guess(beta: f64, x: f64, q: f64 /* q=±1 */) -> f64 {
+  normalised_implied_volatility_from_a_transformed_rational_guess_with_limited_iterations(beta, x, q, get_implied_volatility_maximum_iterations())
 }

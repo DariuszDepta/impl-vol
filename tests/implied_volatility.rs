@@ -6,8 +6,8 @@ fn eq(expected: f64, actual: f64) {
 
 #[test]
 #[rustfmt::skip]
-fn test_iv_implied_volatility_from_a_transformed_rational_guess() {
-  let f = iv_implied_volatility_from_a_transformed_rational_guess;
+fn test_implied_volatility_from_a_transformed_rational_guess() {
+  let f = implied_volatility_from_a_transformed_rational_guess;
   eq(0.3148253556850184, f(539.1269453050334, 2170.4221251767294, 1700.00, 0.926027, 1.0));
   eq(0.3005835339311901, f(459.18797785046036, 2170.4221251767294, 1800.00, 0.926027, 1.0));
   eq(0.28700565680447726, f(383.9915991044646, 2170.4221251767294, 1900.00, 0.926027, 1.0));

@@ -10,6 +10,7 @@
 use crate::definitions::*;
 
 /// SUBROUTINE CALERF(ARG,RESULT,JINT)
+#[allow(clippy::excessive_precision)]
 fn calerf(x: f64, jint: i64) -> f64 {
   let a = [3.1611237438705656, 113.864154151050156, 377.485237685302021, 3209.37758913846947, 0.185777706184603153];
   let b = [23.6012909523441209, 244.024637934444173, 1282.61652607737228, 2844.23683343917062];
@@ -76,17 +77,15 @@ fn calerf(x: f64, jint: i64) -> f64 {
       if x < ZERO {
         result = TWO - result;
       }
-    } else {
-      if x < ZERO {
-        if x < XNEG {
-          result = XINF;
-        } else {
-          let d_1 = x * SIXTEN;
-          let ysq = d_int(d_1) / SIXTEN;
-          let del = (x - ysq) * (x + ysq);
-          let y = exp(ysq * ysq) * exp(del);
-          result = y + y - result;
-        }
+    } else if x < ZERO {
+      if x < XNEG {
+        result = XINF;
+      } else {
+        let d_1 = x * SIXTEN;
+        let ysq = d_int(d_1) / SIXTEN;
+        let del = (x - ysq) * (x + ysq);
+        let y = exp(ysq * ysq) * exp(del);
+        result = y + y - result;
       }
     }
     result
@@ -109,9 +108,9 @@ fn calerf(x: f64, jint: i64) -> f64 {
       result = ONE - result;
     }
     if jint == 2 {
-      result = exp(ysq) * result;
+      result *= exp(ysq);
     }
-    return result;
+    result
   } else if y <= FOUR {
     let mut xnum = c__[8] * y;
     let mut xden = y;
@@ -125,7 +124,7 @@ fn calerf(x: f64, jint: i64) -> f64 {
       let ysq = d_int(d_1) / SIXTEN;
       let del = (y - ysq) * (y + ysq);
       d_1 = exp(-ysq * ysq) * exp(-del);
-      result = d_1 * result;
+      result *= d_1;
     }
     fix_negative_result(result)
   } else {
@@ -153,20 +152,20 @@ fn calerf(x: f64, jint: i64) -> f64 {
       let ysq = d_int(d_1) / SIXTEN;
       let del = (y - ysq) * (y + ysq);
       d_1 = exp(-ysq * ysq) * exp(-del);
-      result = d_1 * result;
+      result *= d_1;
     }
     fix_negative_result(result)
   }
 }
 
 pub fn erf_cody(x: f64) -> f64 {
-  return calerf(x, 0);
+  calerf(x, 0)
 }
 
 pub fn erfc_cody(x: f64) -> f64 {
-  return calerf(x, 1);
+  calerf(x, 1)
 }
 
 pub fn erfcx_cody(x: f64) -> f64 {
-  return calerf(x, 2);
+  calerf(x, 2)
 }

@@ -7,6 +7,7 @@ lazy_static! {
 }
 
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn rational_cubic_interpolation(x: f64, x_l: f64, x_r: f64, y_l: f64, y_r: f64, d_l: f64, d_r: f64, r: f64) -> f64 {
   let h = x_r - x_l;
   if fabs(h) <= 0.0 {
@@ -14,7 +15,7 @@ pub fn rational_cubic_interpolation(x: f64, x_l: f64, x_r: f64, y_l: f64, y_r: f
   }
   // r should be greater than -1. We do not use  assert(r > -1)  here in order to allow values such as NaN to be propagated as they should.
   let t = (x - x_l) / h;
-  if !(r >= *MAXIMUM_RATIONAL_CUBIC_CONTROL_PARAMETER_VALUE) {
+  if r.lt(&MAXIMUM_RATIONAL_CUBIC_CONTROL_PARAMETER_VALUE) {
     let t = (x - x_l) / h;
     let omt = 1.0 - t;
     let t2 = t * t;
@@ -23,7 +24,7 @@ pub fn rational_cubic_interpolation(x: f64, x_l: f64, x_r: f64, y_l: f64, y_r: f
     return (y_r * t2 * t + (r * y_r - h * d_r) * t2 * omt + (r * y_l + h * d_l) * t * omt2 + y_l * omt2 * omt) / (1.0 + (r - 3.0) * t * omt);
   }
   // Linear interpolation without over-or underflow.
-  return y_r * t + y_l * (1.0 - t);
+  y_r * t + y_l * (1.0 - t)
 }
 
 ///
@@ -100,6 +101,7 @@ pub fn minimum_rational_cubic_control_parameter(d_l: f64, d_r: f64, s: f64, pref
 }
 
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn convex_rational_cubic_control_parameter_to_fit_second_derivative_at_left_side(
   x_l: f64,
   x_r: f64,
@@ -116,6 +118,7 @@ pub fn convex_rational_cubic_control_parameter_to_fit_second_derivative_at_left_
 }
 
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(
   x_l: f64,
   x_r: f64,
