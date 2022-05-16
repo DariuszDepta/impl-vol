@@ -179,7 +179,7 @@ fn normalised_black_call_using_norm_cdf(x: f64, s: f64) -> f64 {
 ///             =  Φ(h+t)·exp(h·t)      -   Φ(h-t)·exp(-h·t) .                     (*)
 ///
 /// It is mentioned in section 4 (and discussion of figures 2 and 3) of George Marsaglia's article "Evaluating the
-/// Normal Distribution" (available at http://www.jstatsoft.org/v11/a05/paper) that the error of any cumulative normal
+/// Normal Distribution" (available at www.jstatsoft.org/v11/a05/paper) that the error of any cumulative normal
 /// function Φ(z) is dominated by the hardware (or compiler implementation) accuracy of exp(-z²/2) which is not
 /// reliably more than 14 digits when z is large. The accuracy of Φ(z) typically starts coming down to 14 digits when
 /// z is around -8. For the (normalised) Black function, as above in (*), this means that we are subtracting two terms
@@ -375,7 +375,7 @@ fn inverse_f_upper_map(f: f64) -> f64 {
 }
 
 ///```text
-/// See http://en.wikipedia.org/wiki/Householder%27s_method for a detailed explanation of the third order Householder iteration.
+/// See www.en.wikipedia.org/wiki/Householder%27s_method for a detailed explanation of the third order Householder iteration.
 ///
 /// Given the objective function g(s) whose root x such that 0 = g(s) we seek, iterate
 ///
@@ -429,7 +429,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
       let (f_lower_map_l, d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2) = compute_f_lower_map_and_first_two_derivatives(x, s_l);
       let r_ll =
         convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, d2_f_lower_map_l_d_beta2, true);
-      f = crate::rational_cubic::rational_cubic_interpolation(beta, 0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, r_ll);
+      f = rational_cubic_interpolation(beta, 0., b_l, 0., f_lower_map_l, 1., d_f_lower_map_l_d_beta, r_ll);
       if f.le(&0.0) {
         // This can happen due to roundoff truncation for extreme values such as |x|>500.
         // We switch to quadratic interpolation using f(0)≡0, f(b_l), and f'(0)≡1 to specify the quadratic.
@@ -496,7 +496,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
     } else {
       let v_l = normalised_vega(x, s_l);
       let r_lm = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_right_side(b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, 0.0, false);
-      s = crate::rational_cubic::rational_cubic_interpolation(beta, b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, r_lm);
+      s = rational_cubic_interpolation(beta, b_l, b_c, s_l, s_c, 1.0 / v_l, 1.0 / v_c, r_lm);
       s_left = s_l;
       s_right = s_c;
     }
@@ -506,7 +506,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
     if beta <= b_h {
       let v_h = normalised_vega(x, s_h);
       let r_hm = convex_rational_cubic_control_parameter_to_fit_second_derivative_at_left_side(b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, 0.0, false);
-      s = crate::rational_cubic::rational_cubic_interpolation(beta, b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, r_hm);
+      s = rational_cubic_interpolation(beta, b_c, b_h, s_c, s_h, 1.0 / v_c, 1.0 / v_h, r_hm);
       s_left = s_c;
       s_right = s_h;
     } else {
@@ -522,7 +522,7 @@ fn unchecked_normalised_implied_volatility_from_a_transformed_rational_guess_wit
           d2_f_upper_map_h_d_beta2,
           true,
         );
-        f = crate::rational_cubic::rational_cubic_interpolation(beta, b_h, b_max, f_upper_map_h, 0., d_f_upper_map_h_d_beta, -0.5, r_hh);
+        f = rational_cubic_interpolation(beta, b_h, b_max, f_upper_map_h, 0., d_f_upper_map_h_d_beta, -0.5, r_hh);
       }
       if f <= 0.0 {
         let h = b_max - b_h;
