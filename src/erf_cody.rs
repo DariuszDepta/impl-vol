@@ -7,7 +7,7 @@
 //!
 //!
 
-use crate::utils::*;
+use crate::definitions::*;
 
 /// SUBROUTINE CALERF(ARG,RESULT,JINT)
 fn calerf(x: f64, jint: i64) -> f64 {

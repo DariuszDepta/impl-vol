@@ -1,33 +1,13 @@
+use crate::definitions::*;
 use crate::erf_cody::*;
 use crate::normal_distribution::*;
-use crate::utils::*;
-use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 //static TWO_PI: f64 = 6.283185307179586476925286766559005768394338798750; //
 
-lazy_static! {
-  static ref DBL_MIN: f64 = f64::MIN_POSITIVE;
-  static ref DBL_MAX: f64 = f64::MAX;
-  static ref DBL_EPSILON: f64 = f64::EPSILON;
-  static ref SQRT_DBL_EPSILON: f64 = DBL_EPSILON.sqrt();
-  static ref FOURTH_ROOT_DBL_EPSILON: f64 = SQRT_DBL_EPSILON.sqrt();
-  static ref EIGHTH_ROOT_DBL_EPSILON: f64 = FOURTH_ROOT_DBL_EPSILON.sqrt();
-  static ref SIXTEENTH_ROOT_DBL_EPSILON: f64 = EIGHTH_ROOT_DBL_EPSILON.sqrt();
-  static ref SQRT_DBL_MIN: f64 = DBL_MIN.sqrt();
-  static ref SQRT_DBL_MAX: f64 = DBL_MAX.sqrt();
-  /// η
-  static ref ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD: f64 = -10.0;
-  /// τ
-  static ref SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD: f64 = 2.0*SIXTEENTH_ROOT_DBL_EPSILON.clone();
-}
-
 /// Set this to 0 if you want positive results for (positive) denormalised inputs, else to DBL_MIN.
 /// Note that you cannot achieve full machine accuracy from denormalised inputs!
 const DENORMALISATION_CUTOFF: f64 = 0.0;
-
-static VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_BELOW_INTRINSIC: f64 = f64::MIN;
-static VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_ABOVE_MAXIMUM: f64 = f64::MAX;
 
 /// (DBL_DIG*20)/3 ≈ 100.
 /// Only needed when the iteration effectively alternates Householder/Halley/Newton steps

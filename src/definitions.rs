@@ -1,38 +1,62 @@
+use lazy_static::lazy_static;
+
+pub const VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_BELOW_INTRINSIC: f64 = f64::MIN;
+pub const VOLATILITY_VALUE_TO_SIGNAL_PRICE_IS_ABOVE_MAXIMUM: f64 = f64::MAX;
+pub const DBL_MIN: f64 = f64::MIN_POSITIVE;
+pub const DBL_MAX: f64 = f64::MAX;
+pub const DBL_EPSILON: f64 = f64::EPSILON;
+
+lazy_static! {
+  pub static ref SQRT_DBL_EPSILON: f64 = DBL_EPSILON.sqrt();
+  pub static ref FOURTH_ROOT_DBL_EPSILON: f64 = SQRT_DBL_EPSILON.sqrt();
+  pub static ref EIGHTH_ROOT_DBL_EPSILON: f64 = FOURTH_ROOT_DBL_EPSILON.sqrt();
+  pub static ref SIXTEENTH_ROOT_DBL_EPSILON: f64 = EIGHTH_ROOT_DBL_EPSILON.sqrt();
+  pub static ref SQRT_DBL_MIN: f64 = DBL_MIN.sqrt();
+  pub static ref SQRT_DBL_MAX: f64 = DBL_MAX.sqrt();
+  pub static ref ASYMPTOTIC_EXPANSION_ACCURACY_THRESHOLD: f64 = -10.0;
+  pub static ref SMALL_T_EXPANSION_OF_NORMALISED_BLACK_THRESHOLD: f64 = 2.0 * SIXTEENTH_ROOT_DBL_EPSILON.clone();
+}
+
 #[inline(always)]
-pub fn max(a: f64, b: f64) -> f64 {
-  if a >= b {
-    a
+pub fn is_zero(x: f64) -> bool {
+  x.abs() < DBL_MIN
+}
+
+#[inline(always)]
+pub fn max(x: f64, y: f64) -> f64 {
+  if x >= y {
+    x
   } else {
-    b
+    y
   }
 }
 
 #[inline(always)]
-pub fn exp(a: f64) -> f64 {
-  a.exp()
+pub fn exp(x: f64) -> f64 {
+  x.exp()
 }
 
 #[inline(always)]
-pub fn sqrt(a: f64) -> f64 {
-  a.sqrt()
+pub fn sqrt(x: f64) -> f64 {
+  x.sqrt()
 }
 
 #[inline(always)]
-pub fn square(a: f64) -> f64 {
-  a * a
+pub fn square(x: f64) -> f64 {
+  x * x
 }
 
 #[inline(always)]
-pub fn fabs(a: f64) -> f64 {
-  a.abs()
+pub fn fabs(x: f64) -> f64 {
+  x.abs()
 }
 
 #[inline(always)]
-pub fn sel(c: bool, a: f64, b: f64) -> f64 {
+pub fn sel(c: bool, x: f64, y: f64) -> f64 {
   if c {
-    a
+    x
   } else {
-    b
+    y
   }
 }
 
