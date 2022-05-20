@@ -1,6 +1,6 @@
 [package]
 name = "impl-vol"
-version = "0.0.1"
+version = "0.0.3"
 authors = ["Dariusz Depta <depta@engos.software>"]
 description = "Implied volatility"
 documentation = "https://docs.rs/impl-vol"
